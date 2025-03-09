@@ -90,7 +90,7 @@ class Scorecard:
                 return 30
             return 0
         elif category == "Large Straight":
-            sorted_dice = sorted(set(dice))
+            sorted_dice = sorted(dice)
             return (
                 40
                 if sorted_dice == [1, 2, 3, 4, 5] or sorted_dice == [2, 3, 4, 5, 6]

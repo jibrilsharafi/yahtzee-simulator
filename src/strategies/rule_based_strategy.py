@@ -1,4 +1,4 @@
-from typing import List, Set
+from typing import List, Set, Tuple
 from collections import Counter
 from src.strategies.base_strategy import BaseStrategy
 from src.game.scorecard import Scorecard
@@ -18,14 +18,42 @@ class RuleBasedStrategy(BaseStrategy):
         # Count occurrences of each value
         counts = Counter(current_dice)
         most_common = counts.most_common()
-
-        # Try to build sets (pairs, three of a kind, etc.)
-        if most_common[0][1] >= 2:  # If we have at least a pair
-            value_to_keep = most_common[0][0]
+        
+        # Find the highest count
+        highest_count = most_common[0][1] if most_common else 0
+        
+        if highest_count >= 2:  # If we have at least a pair
+            # Find all values that appear with the highest count
+            highest_count_values = [value for value, count in most_common if count == highest_count]
+            
+            # Choose the highest value among them
+            value_to_keep = max(highest_count_values)
+            
+            # Keep all dice with that value
             return {i for i, v in enumerate(current_dice) if v == value_to_keep}
-
+        
+        # Check for potential straights
+        sorted_unique = sorted(set(current_dice))
+        
+        # If we have 4 unique consecutive numbers, keep them
+        if self._is_potential_straight(sorted_unique):
+            return {i for i, v in enumerate(current_dice) 
+                   if v in sorted_unique and sorted_unique.count(v) == 1}
+        
         # Otherwise, keep high values
         return {i for i, v in enumerate(current_dice) if v >= 4}
+    
+    def _is_potential_straight(self, values: List[int]) -> bool:
+        """Check if the values could form a straight."""
+        if len(values) < 3:
+            return False
+            
+        # Check for consecutive values
+        for i in range(len(values) - 2):
+            if values[i+1] == values[i] + 1 and values[i+2] == values[i] + 2:
+                return True
+        
+        return False
 
     def select_category(self, dice: List[int], scorecard: Scorecard) -> str:
         """
@@ -38,13 +66,37 @@ class RuleBasedStrategy(BaseStrategy):
         # Calculate potential scores for each category
         potential_scores = {}
         for category in scorecard.scores:
-            if (
-                scorecard.get_score(category) is None
-            ):  # Only consider unscored categories
+            if scorecard.get_score(category) is None:  # Only consider unscored categories
                 potential_scores[category] = scorecard.calculate_score(category, dice)
 
         if not potential_scores:
             raise ValueError("No available categories to score")
-
-        # Choose the category with the highest potential score
-        return max(potential_scores.items(), key=lambda x: x[1])[0]
+        
+        # Check if we have any high-scoring categories
+        high_value_categories = ["Yahtzee", "Large Straight", "Small Straight", "Full House"]
+        for category in high_value_categories:
+            if category in potential_scores and potential_scores[category] > 0:
+                return category
+            
+        # Find the category with the highest points per potential (upper section has long-term value)
+        upper_section = {"Ones": 1, "Twos": 2, "Threes": 3, "Fours": 4, "Fives": 5, "Sixes": 6}
+        best_category = None
+        best_value = -1
+        
+        for category, score in potential_scores.items():
+            # Give bonus to upper section categories to encourage completing them
+            value = score
+            if category in upper_section:
+                # Value efficiency - how close are we to maximizing this category
+                max_possible = upper_section[category] * 5
+                if max_possible > 0:
+                    efficiency = score / max_possible
+                    # Bonus for nearly complete upper section categories
+                    if score >= upper_section[category] * 3:
+                        value = score * 1.2
+            
+            if value > best_value:
+                best_value = value
+                best_category = category
+                
+        return best_category if best_category else max(potential_scores.items(), key=lambda x: x[1])[0]
