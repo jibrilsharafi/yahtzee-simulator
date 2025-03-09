@@ -1,79 +1,99 @@
+from typing import Dict, List, Optional, Any
+
 class Scorecard:
-    def __init__(self):
-        self.scores = {
-            "ones": None,
-            "twos": None,
-            "threes": None,
-            "fours": None,
-            "fives": None,
-            "sixes": None,
-            "three_of_a_kind": None,
-            "four_of_a_kind": None,
-            "full_house": None,
-            "small_straight": None,
-            "large_straight": None,
-            "yahtzee": None,
-            "chance": None
+    def __init__(self) -> None:
+        self.scores: Dict[str, Optional[int]] = {
+            "Ones": None,
+            "Twos": None,
+            "Threes": None,
+            "Fours": None,
+            "Fives": None,
+            "Sixes": None,
+            "Three of a Kind": None,
+            "Four of a Kind": None,
+            "Full House": None,
+            "Small Straight": None,
+            "Large Straight": None,
+            "Yahtzee": None,
+            "Chance": None
         }
-
-    def calculate_score(self, category, dice):
-        if category == "ones":
-            return dice.count(1) * 1
-        elif category == "twos":
-            return dice.count(2) * 2
-        elif category == "threes":
-            return dice.count(3) * 3
-        elif category == "fours":
-            return dice.count(4) * 4
-        elif category == "fives":
-            return dice.count(5) * 5
-        elif category == "sixes":
-            return dice.count(6) * 6
-        elif category == "three_of_a_kind":
-            return self._three_of_a_kind_score(dice)
-        elif category == "four_of_a_kind":
-            return self._four_of_a_kind_score(dice)
-        elif category == "full_house":
-            return self._full_house_score(dice)
-        elif category == "small_straight":
-            return 30 if self._is_small_straight(dice) else 0
-        elif category == "large_straight":
-            return 40 if self._is_large_straight(dice) else 0
-        elif category == "yahtzee":
-            return 50 if self._is_yahtzee(dice) else 0
-        elif category == "chance":
+    
+    def get_score(self, category: str) -> Optional[int]:
+        return self.scores.get(category)
+    
+    def set_score(self, category: str, value: int) -> None:
+        if category not in self.scores:
+            raise ValueError(f"Invalid category: {category}")
+        if self.scores[category] is not None:
+            raise ValueError(f"Category {category} already scored")
+        self.scores[category] = value
+    
+    def get_total_score(self) -> int:
+        # Calculate upper section bonus
+        upper_section = ["Ones", "Twos", "Threes", "Fours", "Fives", "Sixes"]
+        upper_total = sum(self.scores[category] or 0 for category in upper_section)
+        bonus = 35 if upper_total >= 63 else 0
+        
+        # Calculate total including bonus
+        total = sum(score or 0 for score in self.scores.values()) + bonus
+        return total
+        
+    def is_complete(self) -> bool:
+        return all(score is not None for score in self.scores.values())
+    
+    def calculate_score(self, category: str, dice: List[int]) -> int:
+        if category == "Ones":
+            return sum(d for d in dice if d == 1)
+        elif category == "Twos":
+            return sum(d for d in dice if d == 2)
+        elif category == "Threes":
+            return sum(d for d in dice if d == 3)
+        elif category == "Fours":
+            return sum(d for d in dice if d == 4)
+        elif category == "Fives":
+            return sum(d for d in dice if d == 5)
+        elif category == "Sixes":
+            return sum(d for d in dice if d == 6)
+        elif category == "Three of a Kind":
+            for i in range(1, 7):
+                if dice.count(i) >= 3:
+                    return sum(dice)
+            return 0
+        elif category == "Four of a Kind":
+            for i in range(1, 7):
+                if dice.count(i) >= 4:
+                    return sum(dice)
+            return 0
+        elif category == "Full House":
+            has_three = False
+            has_two = False
+            for i in range(1, 7):
+                if dice.count(i) == 3:
+                    has_three = True
+                elif dice.count(i) == 2:
+                    has_two = True
+            return 25 if has_three and has_two else 0
+        elif category == "Small Straight":
+            sorted_dice = sorted(set(dice))
+            if len(sorted_dice) >= 4 and (
+                sorted_dice == [1,2,3,4] or 
+                sorted_dice == [2,3,4,5] or 
+                sorted_dice == [3,4,5,6] or
+                [1,2,3,4] == sorted_dice[:4] or
+                [2,3,4,5] == sorted_dice[:4] or
+                [3,4,5,6] == sorted_dice[:4] or
+                [1,2,3,4] == sorted_dice[-4:] or
+                [2,3,4,5] == sorted_dice[-4:] or
+                [3,4,5,6] == sorted_dice[-4:]
+            ):
+                return 30
+            return 0
+        elif category == "Large Straight":
+            sorted_dice = sorted(set(dice))
+            return 40 if sorted_dice == [1,2,3,4,5] or sorted_dice == [2,3,4,5,6] else 0
+        elif category == "Yahtzee":
+            return 50 if any(dice.count(i) == 5 for i in range(1, 7)) else 0
+        elif category == "Chance":
             return sum(dice)
-        return 0
-
-    def _three_of_a_kind_score(self, dice):
-        for die in set(dice):
-            if dice.count(die) >= 3:
-                return sum(dice)
-        return 0
-
-    def _four_of_a_kind_score(self, dice):
-        for die in set(dice):
-            if dice.count(die) >= 4:
-                return sum(dice)
-        return 0
-
-    def _full_house_score(self, dice):
-        unique_counts = set(dice.count(die) for die in set(dice))
-        return 25 if unique_counts == {2, 3} else 0
-
-    def _is_small_straight(self, dice):
-        small_straights = [{1, 2, 3, 4}, {2, 3, 4, 5}, {3, 4, 5, 6}]
-        return any(small_straight.issubset(set(dice)) for small_straight in small_straights)
-
-    def _is_large_straight(self, dice):
-        return set(dice) in [{1, 2, 3, 4, 5}, {2, 3, 4, 5, 6}]
-
-    def _is_yahtzee(self, dice):
-        return len(set(dice)) == 1
-
-    def get_scores(self):
-        return self.scores
-
-    def set_score(self, category, score):
-        if category in self.scores:
-            self.scores[category] = score
+        else:
+            raise ValueError(f"Invalid category: {category}")
