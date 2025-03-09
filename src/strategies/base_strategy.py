@@ -1,11 +1,15 @@
 from typing import List, Set
+
 from src.game.scorecard import Scorecard
 
+
 class BaseStrategy:
-    def select_dice_to_keep(self, current_dice: List[int], scorecard: Scorecard) -> Set[int]:
+    def select_dice_to_keep(
+        self, current_dice: List[int], scorecard: Scorecard
+    ) -> Set[int]:
         """
         Selects which dice to keep based on the current state of the game.
-        
+
         :param current_dice: List of current dice values.
         :param scorecard: Current scorecard of the player.
         :return: Set of indices of dice to keep.
@@ -15,7 +19,7 @@ class BaseStrategy:
     def select_category(self, dice: List[int], scorecard: Scorecard) -> str:
         """
         Selects which category to score in.
-        
+
         :param dice: Current dice values.
         :param scorecard: Current scorecard of the player.
         :return: Category name to score in.

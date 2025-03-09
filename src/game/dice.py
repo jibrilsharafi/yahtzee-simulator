@@ -1,6 +1,7 @@
 import random
 from typing import List, Set, Optional
 
+
 class Dice:
     def __init__(self, num_dice: int = 5) -> None:
         self.values: List[int] = [1] * num_dice

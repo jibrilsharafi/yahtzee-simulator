@@ -1,4 +1,3 @@
-import sys
 from typing import Dict
 
 from src.game.yahtzee_game import YahtzeeGame

@@ -1,8 +1,7 @@
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set
 
 from src.game.dice import Dice
 from src.game.player import Player
-from src.game.scorecard import Scorecard
 from src.strategies.base_strategy import BaseStrategy
 
 
