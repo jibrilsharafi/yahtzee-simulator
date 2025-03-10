@@ -1,6 +1,6 @@
 from typing import List, Set
 
-from src.game.scorecard import Scorecard
+from src.game.scorecard import Scorecard, ScorecardCategory
 
 
 class BaseStrategy:
@@ -16,7 +16,7 @@ class BaseStrategy:
         """
         raise NotImplementedError("This method should be overridden by subclasses.")
 
-    def select_category(self, dice: List[int], scorecard: Scorecard) -> str:
+    def select_category(self, dice: List[int], scorecard: Scorecard) -> ScorecardCategory:
         """
         Selects which category to score in.
 

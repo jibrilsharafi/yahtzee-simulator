@@ -3,6 +3,7 @@ from typing import Any, Dict, List, Optional, Set
 from src.game.dice import Dice
 from src.game.player import Player
 from src.strategies.base_strategy import BaseStrategy
+from src.game.scorecard import ScorecardCategory
 
 
 class YahtzeeGame:
@@ -37,7 +38,7 @@ class YahtzeeGame:
     def get_current_player(self) -> Player:
         return self.players[self.current_player_index]
 
-    def select_score(self, category: str) -> int:
+    def select_score(self, category: ScorecardCategory) -> int:
         if not self.current_roll:
             raise ValueError("Must roll dice before selecting a score")
 
@@ -126,7 +127,7 @@ class YahtzeeGame:
             "turn": self.current_turn,
         }
 
-    def update_game_state(self, dice_to_keep: Set[int], category: str) -> None:
+    def update_game_state(self, dice_to_keep: Set[int], category: ScorecardCategory) -> None:
         if self.roll_count < self.max_rolls_per_turn and len(dice_to_keep) < 5:
             self.roll_dice(dice_to_keep)
         else:

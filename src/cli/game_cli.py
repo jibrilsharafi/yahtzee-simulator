@@ -4,6 +4,7 @@ from src.game.yahtzee_game import YahtzeeGame
 from src.strategies.base_strategy import BaseStrategy
 from src.strategies.random_strategy import RandomStrategy
 from src.strategies.rule_based_strategy import RuleBasedStrategy
+from src.strategies.expected_value_strategy import ExpectedValueStrategy
 
 
 def main() -> None:
@@ -17,10 +18,12 @@ def main() -> None:
     for i in range(num_players):
         name = input(f"Enter name for player {i+1}: ")
         strategy_choice = input(
-            f"Choose strategy for {name} (1=Rule-based, 2=Random): "
+            f"Choose strategy for {name} (1: Expected Value, 2: Rule-Based, 3: Random): "
         )
 
         if strategy_choice == "1":
+            strategies[name] = ExpectedValueStrategy()
+        elif strategy_choice == "2":
             strategies[name] = RuleBasedStrategy()
         else:
             strategies[name] = RandomStrategy()
