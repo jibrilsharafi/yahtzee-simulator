@@ -6,7 +6,7 @@ from src.game.scorecard import Scorecard, ScorecardCategory
 from src.strategies.base_strategy import BaseStrategy
 
 
-class ExpectedValueV2Strategy(BaseStrategy):
+class ExpectedValueV3Strategy(BaseStrategy):
     def __init__(self):
         # Category references using enums directly
         self.upper_categories = [
@@ -38,6 +38,30 @@ class ExpectedValueV2Strategy(BaseStrategy):
 
         # Runtime cache - will be cleared between games
         self.ev_cache = {}
+        
+        # Precompute EVs for common dice configurations
+        self._precompute_common_patterns()
+        
+    def _precompute_common_patterns(self):
+        """Precompute EVs for commonly occurring dice patterns"""
+        common_patterns = [
+            # Empty (keeping nothing)
+            [],
+            # Single high-value die
+            [6], [5],
+            # Pairs of high values
+            [6, 6], [5, 5],
+            # Three of a kind
+            [6, 6, 6], [5, 5, 5], [4, 4, 4],
+            # Straight components
+            [1, 2, 3, 4], [2, 3, 4, 5], [3, 4, 5, 6],
+        ]
+        
+        # For each common pattern, precompute EVs for rolls 1 and 2
+        for dice in common_patterns:
+            for roll in [1, 2]:
+                # Precompute with all categories available
+                self._calculate_ev_for_roll(dice, roll, self.all_categories)
 
     def _dice_key(self, dice: List[int]) -> Tuple[int, ...]:
         """Convert dice values to a canonical representation (counts of each value)"""
@@ -82,20 +106,16 @@ class ExpectedValueV2Strategy(BaseStrategy):
         # Terminal cases: roll 3 or keeping all dice
         if roll_number >= 3 or len(kept_dice) == 5:
             return self._calculate_max_score(kept_dice, available_categories)
-
-        # For rolls 1 and 2, exclude CHANCE category to prevent using it as a fallback
-        categories_to_consider = available_categories
-        if roll_number < 2 and ScorecardCategory.CHANCE in categories_to_consider:
-            categories_to_consider = [
-                cat for cat in available_categories if cat != ScorecardCategory.CHANCE
-            ]
-            # If we removed the last category, restore the original list
-            if not categories_to_consider:
-                categories_to_consider = available_categories
+        
+        # For roll 1, use a simplified model to avoid full tree exploration
+        if roll_number == 1:
+            # Only consider a sample of common patterns for the next roll
+            # instead of evaluating all 6^(5-len(kept_dice)) possibilities
+            return self._simplified_roll1_ev(kept_dice, available_categories)
 
         # Create cache key
         dice_key = self._dice_key(kept_dice)
-        categories_key = self._available_categories_key(categories_to_consider)
+        categories_key = self._available_categories_key(available_categories)
         cache_key = (dice_key, roll_number, categories_key)
 
         # Check cache first
@@ -121,7 +141,7 @@ class ExpectedValueV2Strategy(BaseStrategy):
                 )
             else:  # This is roll 1, we need to find the optimal keep decision for roll 2
                 outcome_score = self._find_best_keep_decision(
-                    complete_dice, roll_number + 1, categories_to_consider
+                    complete_dice, roll_number + 1, available_categories
                 )
 
             total_score += outcome_score
@@ -133,15 +153,21 @@ class ExpectedValueV2Strategy(BaseStrategy):
         return ev
 
     def _find_best_keep_decision(
-        self,
-        current_dice: List[int],
-        next_roll_number: int,
-        available_categories: List[ScorecardCategory],
-    ) -> float:
-        """Find the best dice to keep for the next roll."""
+        self, current_dice, next_roll_number, available_categories
+    ):
         # If we're already on roll 3, just score the dice
         if next_roll_number >= 3:
             return self._calculate_max_score(current_dice, available_categories)
+
+        # Calculate theoretical maximum score possible with these dice
+        max_possible_score = self._calculate_max_score(
+            current_dice, available_categories
+        )
+
+        # If we already have a high-value combination, don't waste time exploring
+        # (e.g., if we have a Yahtzee, Small/Large Straight, or Full House)
+        if max_possible_score >= 25:
+            return max_possible_score
 
         # Create sorted dice for smarter pruning
         dice_counts = Counter(current_dice)
@@ -193,12 +219,33 @@ class ExpectedValueV2Strategy(BaseStrategy):
         if scorecard.current_roll >= 3:
             if debug or debug:
                 print("Roll 3: Always keeping all dice")
-            return set([i for i in range(len(current_dice))])
+            return set(range(len(current_dice)))
 
         # Get available categories
         available_categories = [
             cat for cat in self.all_categories if scorecard.get_score(cat) is None
         ]
+
+        # Apply fast heuristics for common patterns
+        counts = Counter(current_dice)
+
+        # Handle special patterns without expensive calculations
+        # 1. Keep any 4 or 5 of a kind
+        most_common = counts.most_common(1)[0]
+        if most_common[1] >= 4:
+            indices = [i for i, die in enumerate(current_dice) if die == most_common[0]]
+            if debug:
+                print(f"Fast decision: Keeping {most_common[1]} of {most_common[0]}")
+            return set(indices)
+
+        # 2. Keep completed straights
+        if sorted(current_dice) in ([1, 2, 3, 4, 5], [2, 3, 4, 5, 6]) and (
+            ScorecardCategory.LARGE_STRAIGHT in available_categories
+            or ScorecardCategory.SMALL_STRAIGHT in available_categories
+        ):
+            if debug:
+                print("Fast decision: Keeping complete straight")
+            return set(range(len(current_dice)))
 
         # Track top decisions with their EVs
         all_decisions = []  # Will store (indices, kept_dice, ev) tuples

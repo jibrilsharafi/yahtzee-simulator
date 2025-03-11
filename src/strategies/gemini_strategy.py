@@ -56,54 +56,58 @@ class GeminiStrategy(BaseStrategy):
 
         if scorecard.current_roll >= 3:
             # If no rolls remaining, keep all dice
-            return set(range(len(current_dice)))
+            return set([i for i in range(len(current_dice))])
 
         # Get rolls remaining
         rolls_remaining = 3 - scorecard.current_roll
 
         # Construct prompt for Gemini
-        prompt = f"""You are an expert Yahtzee player. Your goal is to maximize your score.
-
-The points for each category are as follows:
-- ONES: 1 point for each 1
-- TWOS: 2 points for each 2
-- THREES: 3 points for each 3
-- FOURS: 4 points for each 4
-- FIVES: 5 points for each 5
-- SIXES: 6 points for each 6
-- THREE_OF_A_KIND: Sum of all dice if at least three are the same
-- FOUR_OF_A_KIND: Sum of all dice if at least four are the same
-- FULL_HOUSE: 25 points if there are three of one number and two of another
-- SMALL_STRAIGHT: 30 points for a sequence of four numbers
-- LARGE_STRAIGHT: 40 points for a sequence of five numbers
-- YAHTZEE: 50 points for five of a kind
-- CHANCE: Sum of all dice, no restrictions
-
-The current state is as follows:
-- Current Dice: {current_dice}
-- Rolls Remaining: {rolls_remaining} (so we are on the {scorecard.current_roll} roll)
-- Available Categories: {available_categories_str}
-
-Here's how the scoreboard works:
-- Each category can only be scored once.
-- If a category is None, it's available to be scored.
-- Otherwise, the category has already been scored with the given value.
-
-Your objective is to decide which dice to re-roll to maximize your expected score.
-
-Given the current game state, which dice (by their index, starting at 0) do you want to re-roll to maximize your expected score?
-
-Respond with a list of the indices of the dice to keep, in the format [0, 1, 2]. If no dice should be kept and we should re-roll all, respond with an empty list [].
-Please explain your reasoning in detail. To help you, here are some examples of how to respond:
-
-*REASONING PART*
-Given the current dice and rolls remaining, ...
-
-*CONCLUSION PART*
-To sum up, ...
-
-Result: !!![0, 1, 2]!!! 
-"""
+        prompt = f"""
+            You are an expert Yahtzee player whose goal is to maximize score. You need to decide which dice to keep after this roll.
+            
+            CURRENT GAME STATE:
+            - Current Dice: {current_dice}
+            - Rolls Remaining: {rolls_remaining} (currently on roll #{scorecard.current_roll})
+            - Available Categories: {available_categories_str}
+            
+            CRITICAL INSTRUCTION: You MUST ONLY consider strategies for the AVAILABLE CATEGORIES listed above. DO NOT aim for categories that aren't in this list as they have already been used.
+            
+            YAHTZEE STRATEGY GUIDELINES:
+            1. Dice Retention Priority:
+               - ONLY keep dice that contribute toward AVAILABLE categories - don't keep dice just for the sake of keeping them
+               - Always keep sequences like 1-2-3-4-5 or similar unless SMALL_STRAIGHT or LARGE_STRAIGHT are not in your available categories
+               - Keep high-value dice (5s, 6s) if they help with available upper section or sum-based categories
+               - Rerolling ALL dice is appropriate when your current dice don't align with any available categories
+            
+            2. Early Game Strategy:
+               - Prioritize attempts at high-value categories IF THEY ARE AVAILABLE: YAHTZEE (50pts), LARGE_STRAIGHT (40pts), SMALL_STRAIGHT (30pts)
+               - Keep pairs, three-of-a-kinds as they could develop into valuable combinations for available categories
+               - Don't sacrifice good combinations for upper section unless you already have multiple high scores
+            
+            3. Upper Section Strategy:
+               - Aim for at least 3 dice of each number to reach the 35-point bonus (63+ points needed)
+               - Higher numbers (4,5,6) are more valuable in the upper section if those categories are still available
+            
+            4. When to Keep vs. Reroll:
+               - Always keep 4-of-a-kind, attempt YAHTZEE (but only if YAHTZEE is still available)
+               - Keep 3-of-a-kind if THREE_OF_A_KIND, FOUR_OF_A_KIND, FULL_HOUSE, or YAHTZEE are available
+               - Keep sequences (1-2-3-4 or 2-3-4-5) ONLY if SMALL_STRAIGHT or LARGE_STRAIGHT are available
+               - For Full House, keep the 3-of-a-kind part if you need to reroll (only if FULL_HOUSE is available)
+            
+            5. Avoid wasting CHANCE early - save it as a safety net for otherwise poor rolls late game
+            
+            Which dice indices should you keep (0-indexed) to maximize expected value?
+            
+            Format your answer with detailed reasoning first, then a clear conclusion, followed by your final selection between triple exclamation marks:
+            
+            *REASONING*
+            [Your detailed dice analysis here - ONLY consider the available categories listed above]
+            
+            *CONCLUSION*
+            [Your summarized strategy here - ONLY aim for available categories]
+            
+            Result: !!![indices to keep]!!!
+        """
 
         if debug:
             print(f"\n========== Prompt for dice selection:\n\n{prompt}")
@@ -137,43 +141,47 @@ Result: !!![0, 1, 2]!!!
         ]
 
         # Construct prompt for Gemini
-        prompt = f"""You are an expert Yahtzee player. Your goal is to maximize your score.
-
-The points for each category are as follows:
-- ONES: 1 point for each 1
-- TWOS: 2 points for each 2
-- THREES: 3 points for each 3
-- FOURS: 4 points for each 4
-- FIVES: 5 points for each 5
-- SIXES: 6 points for each 6
-- THREE_OF_A_KIND: Sum of all dice if at least three are the same
-- FOUR_OF_A_KIND: Sum of all dice if at least four are the same
-- FULL_HOUSE: 25 points if there are three of one number and two of another
-- SMALL_STRAIGHT: 30 points for a sequence of four numbers
-- LARGE_STRAIGHT: 40 points for a sequence of five numbers
-- YAHTZEE: 50 points for five of a kind
-- CHANCE: Sum of all dice, no restrictions
-
-The current state is as follows:
-- Final Dice: {dice}
-- Available Categories: {available_categories_str}
-
-Your objective is to decide which category to score in to maximize your overall expected score.
-
-Given the current dice and available categories, which category should be scored?
-
-Respond with the exact name of one category from the available categories list.
-
-Please explain your reasoning in detail. To help you, here are some examples of how to respond:
-
-*REASONING PART*
-Given the current dice and rolls remaining, ...
-
-*CONCLUSION PART*
-To sum up, ...
-
-Result: !!!LARGE_STRAIGHT!!! 
-"""
+        prompt = f"""
+            You are an expert Yahtzee player deciding which category to score with these final dice.
+            
+            CURRENT GAME STATE:
+            - Final Dice: {dice}
+            - Available Categories: {available_categories_str}
+            
+            CRITICAL INSTRUCTION: You MUST ONLY select from the AVAILABLE CATEGORIES listed above. These are your only options.
+            
+            YAHTZEE SCORING STRATEGY GUIDELINES:
+            1. Category Valuation (only if available in your list):
+               - YAHTZEE (50pts), LARGE_STRAIGHT (40pts), SMALL_STRAIGHT (30pts), FULL_HOUSE (25pts) are highest value
+               - Upper section categories depend on dice count (e.g., five 6s = 30pts)
+               - THREE_OF_A_KIND and FOUR_OF_A_KIND score the sum of all dice
+               - Remember: 63+ points in the upper section earns a 35pt bonus
+            
+            2. Opportunity Cost Considerations:
+               - Save CHANCE for poor rolls later - don't use early unless scoring 25+ points
+               - If a roll scores 0 in most categories, use your weakest upper section category
+               - Consider the probability of getting better combinations for remaining categories
+            
+            3. End Game Strategy:
+               - With few categories left, calculate exact values rather than keeping options open
+               - Sometimes it's better to take 0 points in a low-value category to save high-value categories
+            
+            4. Upper Section Management:
+               - Each upper section category needs average of 3 dice to reach bonus
+               - If bonus is secured or impossible, be more strategic with remaining categories
+            
+            Which category from the AVAILABLE CATEGORIES maximizes your expected value for the rest of the game?
+            
+            Format your answer with detailed reasoning first, then a clear conclusion, followed by your final selection between triple exclamation marks:
+            
+            *REASONING*
+            [Your detailed category analysis here - ONLY consider the available categories listed above]
+            
+            *CONCLUSION*
+            [Your summarized choice here - must be one of the available categories]
+            
+            Result: !!!CATEGORY_NAME!!!
+        """
         if debug:
             print(f"\n========== Prompt for category selection:\n\n{prompt}")
 
@@ -208,6 +216,8 @@ Result: !!!LARGE_STRAIGHT!!!
             start = text.index("!!!") + 3
             end = text.rindex("!!!")
             indices_str = text[start:end].strip()
+            if indices_str == "[]":
+                return []
             # Convert to list of integers
             indices = list(map(int, indices_str.strip("[]").split(",")))
             return indices

@@ -20,7 +20,7 @@ class UserInputStrategy:
         """
         # If this is the last roll, keep all dice
         if scorecard.current_roll >= 3:
-            return set(range(len(current_dice)))
+            return set([i for i in range(len(current_dice))])
 
         # Show current state
         print("\n==== YOUR TURN ====")

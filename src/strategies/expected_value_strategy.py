@@ -183,7 +183,7 @@ class ExpectedValueStrategy(BaseStrategy):
         for cat in self.all_categories:
             score = scorecard.get_score(cat)
             if score is not None:
-                new_scorecard.set_score(cat, score)
+                new_scorecard.set_score_raw(cat, score)
 
         # Calculate how many turns remain
         remaining_categories = [
@@ -230,13 +230,13 @@ class ExpectedValueStrategy(BaseStrategy):
         self, current_dice: List[int], scorecard: Scorecard, debug: bool = False
     ) -> Set[int]:
         """Choose which dice to keep based on expected value"""
-        # [No changes needed for this method]
+        
         # Determine current roll number (1, 2, or 3)
         roll_number = scorecard.current_roll
 
         # If this is the third roll, keep all dice
         if roll_number >= 3:
-            return set(range(len(current_dice)))
+            return set([i for i in range(len(current_dice))])
 
         # Create a key for our dice configuration
         dice_config = self._dice_key(current_dice)
