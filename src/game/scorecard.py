@@ -20,6 +20,15 @@ class ScorecardCategory(Enum):
     CHANCE = "chance"
 
 
+def scorecard_from_string(category_str: str) -> "ScorecardCategory":
+    """Convert a string to a ScorecardCategory enum."""
+    try:
+        return ScorecardCategory[category_str.upper()]
+    except KeyError:
+        raise ValueError(f"Invalid category string: {category_str}")
+    return None
+
+
 class Scorecard:
     def __init__(self) -> None:
         # Initialize scores dictionary with None values for all categories
@@ -27,6 +36,17 @@ class Scorecard:
             category: None for category in ScorecardCategory
         }
         self.current_roll = 1  # Track the current roll number (1-3)
+        
+    def get_available_categories(self) -> List[ScorecardCategory]:
+        """Get a list of categories that are not yet filled."""
+        return [cat for cat, score in self.scores.items() if score is None]
+    
+    def get_filled_categories(self) -> List[ScorecardCategory]:
+        """Get a list of categories that are already filled."""
+        return [cat for cat, score in self.scores.items() if score is not None]
+
+    def is_category_filled(self, category: ScorecardCategory) -> bool:
+        return self.scores.get(category) is not None
 
     def get_score(self, category: ScorecardCategory) -> Optional[int]:
         return self.scores.get(category)

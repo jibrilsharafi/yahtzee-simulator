@@ -1,11 +1,16 @@
+import os
+import time
 import unittest
-from collections import Counter
+from collections import Counter, defaultdict
 from unittest.mock import patch
+
+from tabulate import tabulate
 
 from src.game.scorecard import Scorecard, ScorecardCategory
 from src.strategies.base_strategy import BaseStrategy
 from src.strategies.expected_value_strategy import ExpectedValueStrategy
 from src.strategies.expected_value_v2_strategy import ExpectedValueV2Strategy
+from src.strategies.gemini_strategy import GeminiStrategy
 from src.strategies.random_strategy import RandomStrategy
 from src.strategies.rule_based_strategy import RuleBasedStrategy
 
@@ -640,7 +645,9 @@ class TestExpectedValueV2Strategy(unittest.TestCase):
             f"Roll 3 decision should return max score, got {ev} vs {max_score}",
         )
 
-        print(f"✓ _find_best_keep_decision correctly handles roll 3 with max score {max_score}")
+        print(
+            f"✓ _find_best_keep_decision correctly handles roll 3 with max score {max_score}"
+        )
 
     def test_find_best_keep_decision_quality(self):
         """Test that _find_best_keep_decision makes reasonable choices"""
@@ -823,7 +830,7 @@ class TestExpectedValueV2Strategy(unittest.TestCase):
         self.assertLessEqual(ev, 5.0, f"EV should be at most 5.0, got {ev}")
 
         print(f"✓ Real EV calculation for {kept_dice} on roll 2 gives {ev:.2f} points")
-        
+
         # Now do the same as above, but add the Yahtzee category
         # With ONES and YAHTZEE available, the EV should be higher
         available_categories = [ScorecardCategory.ONES, ScorecardCategory.YAHTZEE]
@@ -837,8 +844,7 @@ class TestExpectedValueV2Strategy(unittest.TestCase):
             print(
                 f"✓ Real EV calculation for {kept_dice} on roll {roll_number} with {", ".join([category.name for category in available_categories])} gives {ev:.2f} points"
             )
-            
-                
+
         # Now do it with all categories available
         available_categories = self.strategy.all_categories
         for roll_number in range(1, 4):
@@ -851,7 +857,7 @@ class TestExpectedValueV2Strategy(unittest.TestCase):
             print(
                 f"✓ Real EV calculation for {kept_dice} on roll {roll_number} with all categories gives {ev:.2f} points"
             )
-            
+
         kept_dice = [1, 1, 2, 2]
         available_categories = self.strategy.all_categories
         for roll_number in range(1, 4):
@@ -864,7 +870,7 @@ class TestExpectedValueV2Strategy(unittest.TestCase):
             print(
                 f"✓ Real EV calculation for {kept_dice} on roll {roll_number} with all categories gives {ev:.2f} points"
             )
-            
+
     def test_with_decision_inspection(self):
         """Test specific scenarios with decision inspection"""
         scenarios = [
@@ -875,37 +881,49 @@ class TestExpectedValueV2Strategy(unittest.TestCase):
                 "available": [
                     ScorecardCategory.THREE_OF_A_KIND,
                     ScorecardCategory.SMALL_STRAIGHT,
-                    ScorecardCategory.LARGE_STRAIGHT
-                ]
+                    ScorecardCategory.LARGE_STRAIGHT,
+                ],
             },
             {
                 "name": "Early game complex decision",
                 "dice": [1, 2, 4, 5, 6],
                 "roll": 1,
-                "available": self.strategy.all_categories
-            }
+                "available": self.strategy.all_categories,
+            },
+            {
+                "name": "Medium choice with many options",
+                "dice": [6, 6, 6, 4, 5],
+                "roll": 1,
+                "available": [
+                    cat
+                    for cat in self.strategy.all_categories
+                    if cat != ScorecardCategory.CHANCE
+                ],
+            },
         ]
-        
+
         for scenario in scenarios:
             print(f"\n=== SCENARIO: {scenario['name']} ===")
-            
+
             # Setup scorecard
             scorecard = Scorecard()
             scorecard.current_roll = scenario["roll"]
-            
+
             # Mark unavailable categories
             all_cats = set(self.strategy.all_categories)
             avail_cats = set(scenario["available"])
             unavail_cats = all_cats - avail_cats
-            
+
             for cat in unavail_cats:
                 scorecard.set_score(cat, 0)  # Mark as used
-            
+
             # Actually make the decision and print it
-            kept_indices = self.strategy.select_dice_to_keep(scenario["dice"], scorecard, debug=True)
+            kept_indices = self.strategy.select_dice_to_keep(
+                scenario["dice"], scorecard, debug=True
+            )
             kept_dice = [scenario["dice"][i] for i in kept_indices]
             print(f"Final decision: Keep {kept_dice}")
-            
+
     def test_select_dice_to_keep_real_scenarios(self):
         """Test dice keeping decisions with realistic combinations and available categories"""
         # Create several realistic scenarios to test
@@ -934,173 +952,226 @@ class TestExpectedValueV2Strategy(unittest.TestCase):
             {
                 "name": "Forced choice with limited categories",
                 "dice": [2, 3, 5, 5, 6],
-                "available_categories": [ScorecardCategory.FIVES, ScorecardCategory.SIXES],
+                "available_categories": [
+                    ScorecardCategory.FIVES,
+                    ScorecardCategory.SIXES,
+                ],
                 "roll_number": 2,
-                "expected_to_keep": [5, 5],  # Should keep the 5s given available categories
+                "expected_to_keep": [
+                    5,
+                    5,
+                ],  # Should keep the 5s given available categories
             },
         ]
-    
+
         for scenario in scenarios:
             print(f"Testing scenario: {scenario['name']}")
-            
+
             # Create a scorecard with the appropriate roll number
             scorecard = Scorecard()
             scorecard.current_roll = scenario["roll_number"]
-            
+
             # Set up the available categories
             for cat in self.strategy.all_categories:
                 if cat not in scenario["available_categories"]:
                     scorecard.set_score(cat, 0)  # Mark as used
-            
+
             # Call the method
-            kept_indices = self.strategy.select_dice_to_keep(scenario["dice"], scorecard, debug=True)
-            
+            kept_indices = self.strategy.select_dice_to_keep(
+                scenario["dice"], scorecard, debug=True
+            )
+
             # Extract the kept dice values
             kept_dice = [scenario["dice"][i] for i in kept_indices]
-            
+
             # Check if expected dice values are kept
             expected_dice = scenario["expected_to_keep"]
-            
+
             # Allow for different ordering but same content
             self.assertEqual(
                 Counter(kept_dice),
                 Counter(expected_dice),
-                f"For scenario '{scenario['name']}', expected to keep {expected_dice}, but kept {kept_dice}"
+                f"For scenario '{scenario['name']}', expected to keep {expected_dice}, but kept {kept_dice}",
             )
-            
-            print(f"✓ In scenario '{scenario['name']}', correctly decided to keep {kept_dice}")
-    
+
+            print(
+                f"✓ In scenario '{scenario['name']}', correctly decided to keep {kept_dice}"
+            )
+
     def test_full_turn_decision_making(self):
         """Test the strategy's decision-making across a complete turn (all 3 rolls)"""
         # Setup a realistic game state
         scorecard = Scorecard()
-        
+
         # Let's say we're midway through the game with these categories filled
         scorecard.set_score(ScorecardCategory.ONES, 3)
         scorecard.set_score(ScorecardCategory.TWOS, 6)
         scorecard.set_score(ScorecardCategory.THREES, 9)
         scorecard.set_score(ScorecardCategory.FULL_HOUSE, 25)
-        
+
         # Available categories - important ones still available
         available_categories = [
-            cat for cat in self.strategy.all_categories 
+            cat
+            for cat in self.strategy.all_categories
             if scorecard.get_score(cat) is None
         ]
-        
+
         # First roll
         scorecard.current_roll = 1
         first_roll = [5, 5, 2, 3, 1]
-        kept_indices_1 = self.strategy.select_dice_to_keep(first_roll, scorecard, debug=True)
+        kept_indices_1 = self.strategy.select_dice_to_keep(
+            first_roll, scorecard, debug=True
+        )
         kept_dice_1 = [first_roll[i] for i in kept_indices_1]
-        
+
         # Understandable decision, aiming for the straigths
         self.assertEqual(
             Counter(kept_dice_1),
             Counter([5, 2, 3]),
-            f"Expected to keep [5, 2, 3] after first roll, but kept {kept_dice_1}"
+            f"Expected to keep [5, 2, 3] after first roll, but kept {kept_dice_1}",
         )
-        print(f"✓ After first roll {first_roll}, correctly decided to keep {kept_dice_1}")
-        
+        print(
+            f"✓ After first roll {first_roll}, correctly decided to keep {kept_dice_1}"
+        )
+
         # Second roll - simulate getting another 5 and random dice
         scorecard.current_roll = 2
         second_roll = [5, 5, 5, 1, 6]
-        kept_indices_2 = self.strategy.select_dice_to_keep(second_roll, scorecard, debug=True)
+        kept_indices_2 = self.strategy.select_dice_to_keep(
+            second_roll, scorecard, debug=True
+        )
         kept_dice_2 = [second_roll[i] for i in kept_indices_2]
-        
+
         # Most probably suboptimal decision since it is not aiming for yahtzee
         self.assertEqual(
             Counter(kept_dice_2),
             Counter([5, 5, 5, 6]),
-            f"Expected to keep [5, 5, 5, 6] after second roll, but kept {kept_dice_2}"
+            f"Expected to keep [5, 5, 5, 6] after second roll, but kept {kept_dice_2}",
         )
-        print(f"✓ After second roll {second_roll}, correctly decided to keep {kept_dice_2}")
-        
+        print(
+            f"✓ After second roll {second_roll}, correctly decided to keep {kept_dice_2}"
+        )
+
         # Third roll - simulate getting four 5s total
         scorecard.current_roll = 3
         final_roll = [5, 5, 5, 5, 2]
-        
+
         # For the final roll, all dice should be kept
-        kept_indices_3 = self.strategy.select_dice_to_keep(final_roll, scorecard, debug=True)
+        kept_indices_3 = self.strategy.select_dice_to_keep(
+            final_roll, scorecard, debug=True
+        )
         self.assertEqual(kept_indices_3, {0, 1, 2, 3, 4})
-        
+
         # Now test category selection
         category = self.strategy.select_category(final_roll, scorecard, debug=True)
-        
+
         # With four 5s, it should choose FOUR_OF_A_KIND or FIVES (higher score)
-        expected_categories = [ScorecardCategory.FOUR_OF_A_KIND, ScorecardCategory.FIVES]
+        expected_categories = [
+            ScorecardCategory.FOUR_OF_A_KIND,
+            ScorecardCategory.FIVES,
+        ]
         self.assertIn(
-            category, 
+            category,
             expected_categories,
-            f"Expected to choose {[c.name for c in expected_categories]}, but chose {category.name}"
+            f"Expected to choose {[c.name for c in expected_categories]}, but chose {category.name}",
         )
-        
+
         print(f"✓ Selected appropriate category {category.name} for {final_roll}")
-    
+
     def test_yahtzee_opportunity_recognition(self):
         """Test the strategy's ability to recognize and pursue Yahtzee opportunities"""
         scorecard = Scorecard()
         # Remove chance to avoid interference
         scorecard.set_score(ScorecardCategory.CHANCE, 0)
-        
+
         # Test with 4 of a kind, should keep all four matching dice
         dice = [6, 6, 6, 6, 3]
         scorecard.current_roll = 1
-        
+
         kept_indices = self.strategy.select_dice_to_keep(dice, scorecard, debug=True)
         kept_dice = [dice[i] for i in kept_indices]
-        
+
         self.assertEqual(
             Counter(kept_dice),
             Counter([6, 6, 6, 6]),
-            f"Expected to keep four 6s when pursuing Yahtzee, but kept {kept_dice}"
+            f"Expected to keep four 6s when pursuing Yahtzee, but kept {kept_dice}",
         )
         print(f"✓ Correctly identified and kept {kept_dice} for Yahtzee opportunity")
-        
+
         # Test with 3 of a kind, should still prioritize Yahtzee potential
         dice = [3, 3, 3, 2, 1]
         kept_indices = self.strategy.select_dice_to_keep(dice, scorecard, debug=True)
         kept_dice = [dice[i] for i in kept_indices]
-        
+
         # Also here, very suboptimal: keeping only the 3
         self.assertEqual(
             Counter(kept_dice),
             Counter([3]),
-            f"Expected to keep [3] for Yahtzee opportunity, but kept {kept_dice}"
+            f"Expected to keep [3] for Yahtzee opportunity, but kept {kept_dice}",
         )
         print(f"✓ Correctly identified and kept {kept_dice} for Yahtzee opportunity")
-    
+
+    def test_full_house_potential(self):
+        """
+        Test the strategy's ability to recognize and pursue Full House opportunities
+        """
+        scorecard = Scorecard()
+        scorecard.current_roll = 2
+
+        scorecard.set_score(ScorecardCategory.ONES, 1)
+        scorecard.set_score(ScorecardCategory.TWOS, 2)
+        scorecard.set_score(ScorecardCategory.THREE_OF_A_KIND, 3)
+        scorecard.set_score(ScorecardCategory.FOUR_OF_A_KIND, 4)
+        scorecard.set_score(ScorecardCategory.CHANCE, 5)
+
+        # Test with a pair and a triplet
+        dice = [3, 3, 5, 5, 1]
+
+        # In this case, the strategy should keep the pairs and the triplet
+        kept_indices = self.strategy.select_dice_to_keep(dice, scorecard, debug=True)
+        kept_dice = [dice[i] for i in kept_indices]
+
+        # Should keep the triplet (3) and at least one pair (5)
+        expected_kept = [3, 3, 5, 5]
+        self.assertEqual(
+            Counter(kept_dice),
+            Counter(expected_kept),
+            f"Expected to keep {expected_kept}, but kept {kept_dice}",
+        )
+        print(f"✓ Correctly identified and kept {kept_dice} for Full House opportunity")
+
     def test_straight_building_decisions(self):
         """Test the strategy's ability to recognize and pursue straight opportunities"""
         scorecard = Scorecard()
         scorecard.current_roll = 1
-        
+
         # Test with dice that have potential for large straight
         dice = [1, 3, 4, 5, 2]
-        
+
         # In this case, all dice should be kept since they form a large straight
         kept_indices = self.strategy.select_dice_to_keep(dice, scorecard, debug=True)
         self.assertEqual(
             kept_indices,
             {0, 1, 2, 3, 4},
-            f"Expected to keep all dice for large straight, but kept indices {kept_indices}"
+            f"Expected to keep all dice for large straight, but kept indices {kept_indices}",
         )
         print(f"✓ Correctly kept all dice {dice} for large straight opportunity")
-        
+
         # Test with partial small straight
         dice = [2, 3, 4, 1, 1]
         kept_indices = self.strategy.select_dice_to_keep(dice, scorecard, debug=True)
         kept_dice = [dice[i] for i in kept_indices]
-        
+
         # Should keep the sequence elements (2,3,4) plus at least one 1
         straight_elements = [2, 3, 4]
         for elem in straight_elements:
             self.assertIn(
                 elem,
                 kept_dice,
-                f"Expected {elem} to be kept for small straight building, but it wasn't in {kept_dice}"
+                f"Expected {elem} to be kept for small straight building, but it wasn't in {kept_dice}",
             )
         print(f"✓ Correctly kept straight components when building a straight")
-    
+
     def test_category_selection_priorities(self):
         """Test that the strategy makes optimal category selection decisions"""
         scenarios = [
@@ -1108,98 +1179,490 @@ class TestExpectedValueV2Strategy(unittest.TestCase):
                 "name": "Choose Yahtzee for five of a kind",
                 "dice": [4, 4, 4, 4, 4],
                 "filled_categories": [ScorecardCategory.FOURS],  # Fours already used
-                "expected_category": ScorecardCategory.YAHTZEE
+                "expected_category": ScorecardCategory.YAHTZEE,
             },
             {
                 "name": "Choose matching upper section for Yahtzee when bonus possible",
                 "dice": [3, 3, 3, 3, 3],
                 "filled_categories": [
                     ScorecardCategory.YAHTZEE,  # Yahtzee already scored
-                    ScorecardCategory.FOUR_OF_A_KIND
+                    ScorecardCategory.FOUR_OF_A_KIND,
                 ],
-                "expected_category": ScorecardCategory.THREES  # Should pick upper section for bonus
+                "expected_category": ScorecardCategory.THREES,  # Should pick upper section for bonus
             },
             {
                 "name": "Don't waste good categories on bad rolls",
                 "dice": [1, 2, 3, 5, 6],  # No patterns
                 "filled_categories": [
-                    ScorecardCategory.ONES, ScorecardCategory.TWOS, 
-                    ScorecardCategory.THREES, ScorecardCategory.FOURS
+                    ScorecardCategory.ONES,
+                    ScorecardCategory.TWOS,
+                    ScorecardCategory.THREES,
+                    ScorecardCategory.FOURS,
                 ],
-                "expected_not_category": ScorecardCategory.YAHTZEE  # Shouldn't waste Yahtzee
-            }
+                "expected_not_category": ScorecardCategory.YAHTZEE,  # Shouldn't waste Yahtzee
+            },
         ]
-        
+
         for scenario in scenarios:
             # Setup scorecard
             scorecard = Scorecard()
             for cat in scenario["filled_categories"]:
                 scorecard.set_score(cat, 10)  # Arbitrary non-zero score
-                
+
             # Run the selection
-            selected_category = self.strategy.select_category(scenario["dice"], scorecard, debug=True)
-            
+            selected_category = self.strategy.select_category(
+                scenario["dice"], scorecard, debug=True
+            )
+
             # Check expectations
             if "expected_category" in scenario:
                 self.assertEqual(
                     selected_category,
                     scenario["expected_category"],
-                    f"For scenario '{scenario['name']}', expected category {scenario['expected_category'].name}, but got {selected_category.name}"
+                    f"For scenario '{scenario['name']}', expected category {scenario['expected_category'].name}, but got {selected_category.name}",
                 )
-                print(f"✓ In scenario '{scenario['name']}', correctly selected {selected_category.name}")
-            
+                print(
+                    f"✓ In scenario '{scenario['name']}', correctly selected {selected_category.name}"
+                )
+
             if "expected_not_category" in scenario:
                 self.assertNotEqual(
                     selected_category,
                     scenario["expected_not_category"],
-                    f"For scenario '{scenario['name']}', should not have selected {scenario['expected_not_category'].name}, but did"
+                    f"For scenario '{scenario['name']}', should not have selected {scenario['expected_not_category'].name}, but did",
                 )
-                print(f"✓ In scenario '{scenario['name']}', correctly avoided {scenario['expected_not_category'].name}")
-    
+                print(
+                    f"✓ In scenario '{scenario['name']}', correctly avoided {scenario['expected_not_category'].name}"
+                )
+
     def test_end_game_optimization(self):
         """Test the strategy's decision making near the end of the game"""
         # Setup a scorecard with only a few categories remaining
         scorecard = Scorecard()
-        
+
         # Fill most categories
         remaining_categories = [
             ScorecardCategory.CHANCE,
             ScorecardCategory.YAHTZEE,
-            ScorecardCategory.SIXES
+            ScorecardCategory.SIXES,
         ]
-        
+
         for cat in self.strategy.all_categories:
             if cat not in remaining_categories:
                 scorecard.set_score(cat, 10)
-        
+
         # Test with a mediocre roll
         dice = [1, 3, 2, 5, 6]
-        
-        # Since we're almost at the end of the game, the strategy should be 
+
+        # Since we're almost at the end of the game, the strategy should be
         # more focused on optimizing the few remaining categories
         scorecard.current_roll = 1
         kept_indices = self.strategy.select_dice_to_keep(dice, scorecard, debug=True)
         kept_dice = [dice[i] for i in kept_indices]
-        
+
         # Should at least keep the 6 since SIXES is still available
         self.assertIn(
-            6, 
-            kept_dice, 
-            f"Expected to keep the 6 when SIXES category is available, but kept {kept_dice}"
+            6,
+            kept_dice,
+            f"Expected to keep the 6 when SIXES category is available, but kept {kept_dice}",
         )
         print(f"✓ Correctly kept the 6 when SIXES category is available")
-        
+
         # Test category selection
         scorecard.current_roll = 3
         selected_category = self.strategy.select_category(dice, scorecard, debug=True)
-        
+
         # Should not waste YAHTZEE on this bad roll
         self.assertNotEqual(
             selected_category,
             ScorecardCategory.YAHTZEE,
-            f"Should not waste YAHTZEE on a bad roll"
+            f"Should not waste YAHTZEE on a bad roll",
         )
         print(f"✓ Correctly avoided wasting YAHTZEE on a bad roll")
+
+
+class TestGeminiStrategy(unittest.TestCase):
+    def setUp(self):
+        """Initialize the Gemini strategy"""
+        
+        from dotenv import load_dotenv
+
+        if not load_dotenv():
+            raise RuntimeError("Failed to load environment variables from .env file")
+        
+        api_key = os.environ.get("GOOGLE_API_KEY")
+                
+        self.strategy = GeminiStrategy(api_key)
+
+    def test_basic_strategy(self):
+        """Test the Gemini strategy's decision making"""
+        # Test with a simple scenario
+        scorecard = Scorecard()
+        scorecard.current_roll = 1
+
+        # Test with a roll that has potential for both straights and Yahtzee
+        dice = [1, 2, 3, 4, 5]
+
+        # Call the method
+        kept_indices = self.strategy.select_dice_to_keep(dice, scorecard, debug=True)
+        kept_dice = [dice[i] for i in kept_indices]
+
+        # Should keep all dice since they form a large straight
+        expected_indices = {0, 1, 2, 3, 4}
+        self.assertEqual(
+            kept_indices,
+            expected_indices,
+            f"Expected to keep all dice for large straight, but kept indices {kept_indices}",
+        )
+        print(
+            f"✓ Gemini strategy correctly kept all dice {kept_dice} for large straight"
+        )
+
+        # Test with a roll that has potential for Yahtzee
+        dice = [2, 2, 2, 2, 3]
+        scorecard.current_roll = 2
+        kept_indices = self.strategy.select_dice_to_keep(dice, scorecard, debug=True)
+        kept_dice = [dice[i] for i in kept_indices]
+
+        # Should keep all 2s since they form a Yahtzee
+        expected_indices = {0, 1, 2, 3}
+        self.assertEqual(
+            kept_indices,
+            expected_indices,
+            f"Expected to keep all 2s for Yahtzee, but kept indices {kept_indices}",
+        )
+
+        print(f"✓ Gemini strategy correctly kept all 2s {kept_dice} for Yahtzee")
+
+    def test_complex_strategy(self):
+        """Test the Gemini strategy's decision making with complex scenarios"""
+        # Test with a scenario that has multiple options
+        scorecard = Scorecard()
+        scorecard.current_roll = 2
+
+        # Test with a roll that has potential for both straights and Yahtzee
+        dice = [1, 2, 3, 4, 6]
+
+        # Call the method
+        kept_indices = self.strategy.select_dice_to_keep(dice, scorecard, debug=True)
+        kept_dice = [dice[i] for i in kept_indices]
+
+        # Should keep the sequence elements (1,2,3,4)
+        expected_indices = {0, 1, 2, 3}
+        self.assertEqual(
+            kept_indices,
+            expected_indices,
+            f"Expected to keep {expected_indices}, but kept indices {kept_indices}",
+        )
+        print(f"✓ Gemini strategy correctly kept {kept_dice} for complex scenario")
+
+        # Test with many categories filled, and on first roll
+        scorecard.current_roll = 1
+        scorecard.set_score(ScorecardCategory.ONES, 1)
+        scorecard.set_score(ScorecardCategory.TWOS, 2)
+        scorecard.set_score(ScorecardCategory.THREES, 3)
+        scorecard.set_score(ScorecardCategory.LARGE_STRAIGHT, 2)
+        scorecard.set_score(ScorecardCategory.SMALL_STRAIGHT, 2)
+
+        # Test with a roll that has potential for both straights and Yahtzee
+        dice = [1, 2, 3, 4, 5]
+        kept_indices = self.strategy.select_dice_to_keep(dice, scorecard, debug=True)
+        kept_dice = [dice[i] for i in kept_indices]
+        expected_indices = {3, 4}
+        self.assertEqual(
+            kept_indices,
+            expected_indices,
+            f"Expected to keep only high value dice since straights are filled, but kept indices {kept_indices}",
+        )
+        print(
+            f"✓ Gemini strategy correctly kept {kept_dice} for complex scenario with filled straights"
+        )
+
+
+class TestStrategyPerformance(unittest.TestCase):
+    def setUp(self):
+        """Initialize strategies to test"""
+        self.strategies = {
+            "Random": RandomStrategy(),
+            "RuleBased": RuleBasedStrategy(),
+            "ExpectedValue": ExpectedValueStrategy(),
+            "ExpectedValueV2": ExpectedValueV2Strategy(),
+        }
+
+    def time_strategy_function(self, strategy, func_name, *args, repetitions=10):
+        """Time the execution of a strategy function multiple times and return average"""
+        strategy_func = getattr(strategy, func_name)
+        total_time = 0
+
+        # Warm up run (not counted)
+        strategy_func(*args)
+
+        for _ in range(repetitions):
+            start_time = time.time()
+            result = strategy_func(*args)
+            end_time = time.time()
+            total_time += end_time - start_time
+
+        avg_time = total_time / repetitions
+        return avg_time, result
+
+    def test_performance_dice_keeping(self):
+        """Test the performance of dice keeping decisions across different scenarios"""
+        scenarios = [
+            {
+                "name": "Early game (Roll 1)",
+                "dice": [1, 2, 3, 4, 5],
+                "roll_number": 1,
+                "filled_categories": [],
+            },
+            {
+                "name": "Mid game with pairs (Roll 2)",
+                "dice": [3, 3, 5, 5, 1],
+                "roll_number": 2,
+                "filled_categories": [
+                    ScorecardCategory.ONES,
+                    ScorecardCategory.TWOS,
+                    ScorecardCategory.THREE_OF_A_KIND,
+                    ScorecardCategory.FOUR_OF_A_KIND,
+                ],
+            },
+            {
+                "name": "Late game (Roll 1)",
+                "dice": [6, 6, 6, 3, 2],
+                "roll_number": 1,
+                "filled_categories": [
+                    cat
+                    for cat in ScorecardCategory
+                    if cat
+                    not in [
+                        ScorecardCategory.SIXES,
+                        ScorecardCategory.YAHTZEE,
+                        ScorecardCategory.CHANCE,
+                    ]
+                ],
+            },
+            {
+                "name": "Complex pattern (Roll 2)",
+                "dice": [2, 3, 4, 5, 6],
+                "roll_number": 2,
+                "filled_categories": [
+                    ScorecardCategory.SMALL_STRAIGHT,
+                    ScorecardCategory.LARGE_STRAIGHT,
+                ],
+            },
+            {
+                "name": "Final roll decision",
+                "dice": [4, 4, 4, 4, 1],
+                "roll_number": 3,
+                "filled_categories": [
+                    ScorecardCategory.FOURS,
+                    ScorecardCategory.FOUR_OF_A_KIND,
+                ],
+            },
+        ]
+
+        results = defaultdict(list)
+        decisions = defaultdict(list)
+
+        print("\n\n===== DICE KEEPING PERFORMANCE TEST =====")
+
+        for scenario in scenarios:
+            print(f"\nScenario: {scenario['name']}")
+            print(f"Dice: {scenario['dice']}, Roll: {scenario['roll_number']}")
+
+            # Setup scorecard for this scenario
+            scorecard = Scorecard()
+            scorecard.current_roll = scenario["roll_number"]
+            for cat in scenario["filled_categories"]:
+                scorecard.set_score(cat, 10)  # Arbitrary non-zero score
+
+            # Test each strategy
+            for strategy_name, strategy in self.strategies.items():
+                time_taken, kept_indices = self.time_strategy_function(
+                    strategy,
+                    "select_dice_to_keep",
+                    scenario["dice"],
+                    scorecard,
+                    repetitions=3,
+                )
+
+                results[strategy_name].append(time_taken)
+                kept_dice = [scenario["dice"][i] for i in kept_indices]
+                decisions[strategy_name].append(kept_dice)
+
+                print(
+                    f"  {strategy_name:15} - Time: {time_taken:.6f}s - Kept: {kept_dice}"
+                )
+
+        # Print summary table
+        print("\nSUMMARY - Average execution time (seconds):")
+        headers = ["Strategy"] + [s["name"] for s in scenarios] + ["Average"]
+        table_data = []
+
+        for strategy_name in self.strategies.keys():
+            row = [strategy_name]
+            row.extend([f"{time:.6f}" for time in results[strategy_name]])
+            avg = sum(results[strategy_name]) / len(results[strategy_name])
+            row.append(f"{avg:.6f}")
+            table_data.append(row)
+
+        print(tabulate(table_data, headers=headers, tablefmt="grid"))
+
+    def test_performance_category_selection(self):
+        """Test the performance of category selection decisions across different scenarios"""
+        scenarios = [
+            {
+                "name": "Early game choice",
+                "dice": [3, 3, 3, 4, 5],
+                "filled_categories": [],
+            },
+            {
+                "name": "Mid game with Yahtzee",
+                "dice": [2, 2, 2, 2, 2],
+                "filled_categories": [
+                    ScorecardCategory.TWOS,
+                ],
+            },
+            {
+                "name": "Late game forced choice",
+                "dice": [1, 2, 3, 4, 6],
+                "filled_categories": [
+                    cat
+                    for cat in ScorecardCategory
+                    if cat not in [ScorecardCategory.CHANCE, ScorecardCategory.YAHTZEE]
+                ],
+            },
+            {
+                "name": "Full house decision",
+                "dice": [5, 5, 5, 2, 2],
+                "filled_categories": [
+                    ScorecardCategory.FULL_HOUSE,
+                    ScorecardCategory.THREE_OF_A_KIND,
+                ],
+            },
+            {
+                "name": "Optimal Yahtzee bonus use",
+                "dice": [6, 6, 6, 6, 6],
+                "filled_categories": [
+                    ScorecardCategory.YAHTZEE,
+                    ScorecardCategory.SIXES,
+                ],
+            },
+        ]
+
+        results = defaultdict(list)
+        decisions = defaultdict(list)
+
+        print("\n\n===== CATEGORY SELECTION PERFORMANCE TEST =====")
+
+        for scenario in scenarios:
+            print(f"\nScenario: {scenario['name']}")
+            print(f"Dice: {scenario['dice']}")
+
+            # Setup scorecard for this scenario
+            scorecard = Scorecard()
+            for cat in scenario["filled_categories"]:
+                scorecard.set_score(cat, 10)  # Arbitrary non-zero score
+
+            # Test each strategy
+            for strategy_name, strategy in self.strategies.items():
+                time_taken, category = self.time_strategy_function(
+                    strategy,
+                    "select_category",
+                    scenario["dice"],
+                    scorecard,
+                    repetitions=50,
+                )
+
+                results[strategy_name].append(time_taken)
+                decisions[strategy_name].append(category)
+
+                print(
+                    f"  {strategy_name:15} - Time: {time_taken:.6f}s - Category: {category}"
+                )
+
+        # Print summary table
+        print("\nSUMMARY - Average execution time (seconds):")
+        headers = ["Strategy"] + [s["name"] for s in scenarios] + ["Average"]
+        table_data = []
+
+        for strategy_name in self.strategies.keys():
+            row = [strategy_name]
+            row.extend([f"{time:.6f}" for time in results[strategy_name]])
+            avg = sum(results[strategy_name]) / len(results[strategy_name])
+            row.append(f"{avg:.6f}")
+            table_data.append(row)
+
+        print(tabulate(table_data, headers=headers, tablefmt="grid"))
+
+    def test_full_game_simulation(self):
+        """Test the performance in a simulated full game"""
+        print("\n\n===== FULL GAME SIMULATION PERFORMANCE =====")
+
+        # List of decisions to make in sequence (first roll of each turn)
+        game_sequence = [
+            {"dice": [1, 2, 3, 4, 5], "roll_number": 1},
+            {"dice": [5, 5, 3, 2, 1], "roll_number": 1},
+            {"dice": [6, 6, 6, 4, 2], "roll_number": 1},
+            {"dice": [1, 1, 3, 4, 5], "roll_number": 1},
+            {"dice": [2, 2, 2, 3, 3], "roll_number": 1},
+        ]
+
+        results = defaultdict(list)
+
+        for strategy_name, strategy in self.strategies.items():
+            print(f"\nTesting strategy: {strategy_name}")
+            scorecard = Scorecard()
+            total_decision_time = 0
+
+            for turn, turn_data in enumerate(game_sequence, 1):
+                print(f"  Turn {turn}: Dice {turn_data['dice']}")
+
+                # Time dice keeping decision
+                scorecard.current_roll = turn_data["roll_number"]
+                keep_time, kept_indices = self.time_strategy_function(
+                    strategy,
+                    "select_dice_to_keep",
+                    turn_data["dice"],
+                    scorecard,
+                    repetitions=10,
+                )
+                total_decision_time += keep_time
+                kept_dice = [turn_data["dice"][i] for i in kept_indices]
+
+                # Simulate a final roll result
+                final_dice = kept_dice + [6, 6, 6, 6, 6][: 5 - len(kept_dice)]
+                print(f"    Kept {kept_dice}, final roll: {final_dice}")
+
+                # Time category selection
+                cat_time, category = self.time_strategy_function(
+                    strategy,
+                    "select_category",
+                    final_dice,
+                    scorecard,
+                    repetitions=10,
+                )
+                total_decision_time += cat_time
+
+                # Record the decision and update scorecard
+                score = 0  # We don't actually need to calculate the real score
+                scorecard.set_score(category, score)
+                print(f"    Selected {category} in {cat_time:.6f}s")
+
+            results[strategy_name] = total_decision_time
+            print(f"  Total decision time: {total_decision_time:.6f}s")
+
+        # Print comparative results
+        print("\nSTRATEGY PERFORMANCE SUMMARY:")
+        for name, time_taken in sorted(results.items(), key=lambda x: x[1]):
+            print(f"{name:15}: {time_taken:.6f}s")
+
+        # Calculate relative performance
+        fastest = min(results.values())
+        print("\nRELATIVE PERFORMANCE (relative to fastest):")
+        for name, time_taken in sorted(results.items(), key=lambda x: x[1]):
+            relative = time_taken / fastest
+            print(f"{name:15}: {relative:.2f}x slower than fastest")
 
 
 if __name__ == "__main__":

@@ -16,6 +16,8 @@ class YahtzeeGame:
         self.rounds: int = 13
         self.roll_count: int = 0
         self.max_rolls_per_turn: int = 3
+        self.game_history: List[Dict[str, Any]] = []
+        self.round_number: int = 0
 
     def add_player(self, player_name: str) -> None:
         self.players.append(Player(player_name))
