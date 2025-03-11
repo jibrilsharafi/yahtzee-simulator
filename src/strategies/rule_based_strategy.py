@@ -6,7 +6,7 @@ from src.game.scorecard import Scorecard, ScorecardCategory
 
 class RuleBasedStrategy(BaseStrategy):
     def select_dice_to_keep(
-        self, current_dice: List[int], scorecard: Scorecard
+        self, current_dice: List[int], scorecard: Scorecard, debug: bool = False
     ) -> Set[int]:
         """
         Selects which dice to keep based on a rule-based approach.
@@ -60,7 +60,9 @@ class RuleBasedStrategy(BaseStrategy):
 
         return False
 
-    def select_category(self, dice: List[int], scorecard: Scorecard) -> ScorecardCategory:
+    def select_category(
+        self, dice: List[int], scorecard: Scorecard, debug: bool = False
+    ) -> ScorecardCategory:
         """
         Selects the best category to score based on the current dice.
 

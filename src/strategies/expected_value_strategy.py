@@ -227,7 +227,7 @@ class ExpectedValueStrategy(BaseStrategy):
         return future_value
 
     def select_dice_to_keep(
-        self, current_dice: List[int], scorecard: Scorecard
+        self, current_dice: List[int], scorecard: Scorecard, debug: bool = False
     ) -> Set[int]:
         """Choose which dice to keep based on expected value"""
         # [No changes needed for this method]
@@ -291,7 +291,7 @@ class ExpectedValueStrategy(BaseStrategy):
         return expected_value
 
     def select_category(
-        self, dice: List[int], scorecard: Scorecard
+        self, dice: List[int], scorecard: Scorecard, debug: bool = False
     ) -> ScorecardCategory:
         """Select category that maximizes expected future value"""
         best_ev = -1.0
@@ -341,9 +341,7 @@ class ExpectedValueStrategy(BaseStrategy):
         if best_category is None:
             # This should never happen if available_categories is not empty
             # But adding a fallback to ensure we always return a category
-            print(
-                "Warning: No best category found, defaulting to CHANCE."
-            )
+            print("Warning: No best category found, defaulting to CHANCE.")
             return (
                 available_categories[0]
                 if available_categories

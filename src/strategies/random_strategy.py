@@ -1,12 +1,12 @@
 import random
 from typing import List, Set
 from src.strategies.base_strategy import BaseStrategy
-from src.game.scorecard import Scorecard
+from src.game.scorecard import Scorecard, ScorecardCategory
 
 
 class RandomStrategy(BaseStrategy):
     def select_dice_to_keep(
-        self, current_dice: List[int], scorecard: Scorecard
+        self, current_dice: List[int], scorecard: Scorecard, debug: bool = False
     ) -> Set[int]:
         """
         Randomly selects which dice to keep.
@@ -20,7 +20,9 @@ class RandomStrategy(BaseStrategy):
         # Randomly select indices to keep
         return set(random.sample(range(len(current_dice)), num_to_keep))
 
-    def select_category(self, dice: List[int], scorecard: Scorecard) -> str:
+    def select_category(
+        self, dice: List[int], scorecard: Scorecard, debug: bool = False
+    ) -> ScorecardCategory:
         """
         Randomly selects an unscored category.
 
