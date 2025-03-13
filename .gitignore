@@ -4,3 +4,5 @@
 .env
 __pycache__
 venv
+src/strategies/optimal_strategy/yahtzee_solver.json
+src/strategies/optimal_strategy/yahtzee_solver.pkl

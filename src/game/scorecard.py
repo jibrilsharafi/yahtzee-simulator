@@ -55,8 +55,9 @@ class Scorecard:
     def is_complete(self) -> bool:
         return all(score is not None for score in self.scores.values())
 
+    @staticmethod
     def calculate_score(
-        self, category: ScorecardCategory, dice: List[int], is_yahtzee: bool = False
+        category: ScorecardCategory, dice: List[int], is_yahtzee: bool = False
     ) -> int:
         if category == ScorecardCategory.ONES:
             return sum(d for d in dice if d == 1)
